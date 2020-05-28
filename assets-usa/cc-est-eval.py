@@ -27,7 +27,7 @@ def clickwatch(f):
 
 @clickwatch
 def download_file(path, url):
-    print("downloading {}".format(path), end='')
+    print(f'downloading {path}', end='')
     sleep(1) # so as not to cause a server time-out
     urlretrieve(url, path)
 
@@ -92,7 +92,7 @@ def load_ccest():
     if decade == 2000:
         dd = defaultdict(lambda: int, {"STATE": str, "COUNTY": str})
         ccdfs = []
-        files = glob.glob(dir2000 + '{}*.csv'.format(os.sep))
+        files = glob.glob(f'{dir2000}{os.sep}*.csv')
         for path in files:
             df = pd.read_csv(path, encoding = "ISO-8859-1",
                              usecols=lambda x: x not in ignored_cols,
@@ -123,8 +123,10 @@ def porcess_geos():
         if FIPS in PSAdf.index:
             CBSACode = PSAdf['CBSA Code'][FIPS]
             Geos.append('M' + CBSACode) # Core-based Statistical Area
-            CSACode = PSAdf['CSA Code'][FIPS]    
-            Geos.append('P' + (CSACode if CSACode != str(np.nan) else CBSACode)) # Primary Statistical Area
+            CSACode = PSAdf['CSA Code'][FIPS]
+            if CSACode != str(np.nan): Geos.append('P' + CSACode)
+            # Primary Statistical Areas include Combined Statistical Areas (CSAs)
+            # and the Core-Based Statistical Areas (CBSAs) that aren't in a CSA
         for g in Geos:
             if g in Geocdfs:
                 Geocdfs[g] += df
@@ -234,7 +236,7 @@ def write_data():
     for idx, data in alldata.groupby(level=1):
         if idx < 3: continue
         data = data.reset_index().set_index("GEO").drop("YEAR", axis=1)
-        data.to_csv('DATA{}{}.tsv'.format(os.sep, yearcodes(idx)), sep='\t')
+        data.to_csv(f'DATA{os.sep}{yearcodes(idx)}.tsv', sep='\t')
 
 def main2(param):
     global decade
