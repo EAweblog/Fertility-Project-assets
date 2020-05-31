@@ -5,35 +5,15 @@ downloads County Characteristics datasets from census.gov and builds data tsv
 files by year for CRR and ACE variables
 """
 
+import sys 
+sys.path.append('..')
+from helpers import *
 import glob
 import pandas as pd
-from urllib.request import urlretrieve
 import numpy as np
 from itertools import product
 from collections import defaultdict
 import os
-def ensure_dir(dirname):
-    if not os.path.exists(dirname): os.makedirs(dirname)
-from time import sleep, time
-
-def clickwatch(f):
-    def F(*args, **kwargs):
-        print((f.__doc__ or ''), end='')
-        t0 = time()
-        f(*args, **kwargs)
-        t1 = time()
-        print(' :\t{:.2f} seconds'.format(t1-t0))
-    return F
-
-@clickwatch
-def download_file(path, url):
-    print(f'downloading {path}', end='')
-    sleep(1) # so as not to cause a server time-out
-    urlretrieve(url, path)
-
-def get(path, backup_url):
-    if not os.path.exists(path):
-        download_file(path, backup_url)
 
 dir2000 = 'cc-est2009'
 fn2000  = 'cc-est2009-alldata-{}.csv'
@@ -47,13 +27,13 @@ def download_datasets():
         FIPS_included = [str(fips).zfill(2) for fips in sorted(set(range(1,56+1)) - set(excluded_from_FIPS))]
         for FIPS in FIPS_included:
             path = dir2000 + os.sep + fn2000.format(FIPS)
-            get(path, url.format(FIPS))
+            get_file(path, url.format(FIPS))
     
     if decade == 2010:    
         url = 'https://www2.census.gov/programs-surveys/popest/datasets/2010-2018/counties/asrh/' + fn2010
         ensure_dir(dir2010)
         path = dir2010 + os.sep + fn2010
-        get(path, url)
+        get_file(path, url)
 
 ##############################################################################################################################################################
 @clickwatch
@@ -62,7 +42,7 @@ def load_PSAdf():
     # Primary Statistical Area dataframe
     path = 'list1_2020.xls'
     url = 'https://www2.census.gov/programs-surveys/metro-micro/geographies/reference-files/2020/delineation-files/' + path
-    get(path, url)
+    get_file(path, url)
     global PSAdf
     PSAdf = pd.read_excel(path, skiprows=2, nrows=1916, dtype=str)
     # Delinations source file originally hosted at:
@@ -138,11 +118,11 @@ def porcess_geos():
 @clickwatch
 def append_geos():
     """appending aggregate geographies"""
-    for g, df in Geocdfs.items():
-        df.index = pd.MultiIndex.from_tuples((g,a,b) for a,b in df.index)
+    for geo, df in Geocdfs.items():
+        df.index = pd.MultiIndex.from_tuples((geo,)+idx for idx in df.index)
     
-    global ccdf
-    ccdf = ccdf.append(list(Geocdfs.values())) # DataFrame reshapes take a long time so it's import to only do it once
+    global Geocdf
+    Geocdf = ccdf.append(list(Geocdfs.values())) # DataFrame reshapes take a long time so it's import to only do it once
 ##############################################################################################################################################################
 
 ##############################################################################################################################################################
@@ -169,18 +149,18 @@ def add_myrace_columns():
     
     for his, crace, sex in product(hispanic_status, census_races, sexes):
         ph = his + crace + '%s' + sex # placeholder
-        ccdf[ph%'C'] = ccdf[ph%'AC'] - ccdf[ph%'A']
+        Geocdf[ph%'C'] = Geocdf[ph%'AC'] - Geocdf[ph%'A']
         # (in combination) = (alone or in combination) - (alone)
         
     for his, sex in product(hispanic_status, sexes):
         ph = his + '%s' + sex # placeholder
-        ccdf[ph%'TC'] = sum(ccdf[ph%(crace+'C')] for crace in census_races)
+        Geocdf[ph%'TC'] = sum(Geocdf[ph%(crace+'C')] for crace in census_races)
         # (total in combination) = (sum of [(crace in combination) for crace in census_races])
-        ccdf[ph%'addterm'] = (ccdf[ph%'TOM'] / ccdf[ph%'TC']).replace([-np.inf, np.nan, np.inf], 0)
+        Geocdf[ph%'addterm'] = (Geocdf[ph%'TOM'] / Geocdf[ph%'TC']).replace([-np.inf, np.nan, np.inf], 0)
     
     for his, crace, sex in product(hispanic_status, census_races, sexes):
         ph = his + crace + '%s' + sex # placeholder
-        ccdf[ph%'T'] = ccdf[ph%'A'] + (ccdf[ph%'C'] * ccdf[his + 'addterm' + sex])
+        Geocdf[ph%'T'] = Geocdf[ph%'A'] + (Geocdf[ph%'C'] * Geocdf[his + 'addterm' + sex])
     """
     The people who are labeled `two or more races` (TOM) are partitioned into the
     five census races in proportion to the frequency at which someone reports being
@@ -188,18 +168,20 @@ def add_myrace_columns():
     at which someone reports being any race "in combination" with additional races(s)).
     """
     
-    g = lambda sex,el: sum(ccdf[desc+sex] for desc in el)
-    for sex in sexes:
-        # See above commentary on whites, white hispanics (Mestizos), and Amerindians.
-        ccdf["E"+sex] = g(sex,["TOT"])
-        ccdf["W"+sex] = g(sex,["NHWT"])
-        ccdf["B"+sex] = g(sex,["NHBT", "HBT"])
-        ccdf["R"+sex] = g(sex,["NHIT", "HIT", "HWT"])
-        ccdf["Y"+sex] = g(sex,["NHAT", "HAT", "NHNT", "HNT"])
+    global my_races
+    my_races = {
+        'E': ["TOT"],
+        'W': ["NHWT"],
+        'B': ["NHBT", "HBT"],
+        'R': ["NHIT", "HIT", "HWT"],
+        'Y': ["NHAT", "HAT", "NHNT", "HNT"]
+    }
+    # everyone, white, black, red, yellow
+    # See above commentary on whites, white hispanics (Mestizos), and Amerindians.
     
-my_races = ["E", "W", "B", "R", "Y"]
-# everyone, white, black, red, yellow
-
+    for (race,desig), sex in product(my_races.items(), sexes):
+        Geocdf[race+sex] = sum(Geocdf[desc+sex] for desc in desig)
+    
 ##############################################################################################################################################################
 
 ##############################################################################################################################################################
@@ -208,7 +190,7 @@ my_races = ["E", "W", "B", "R", "Y"]
 def porcess_data():
     """calculating CRR and ACE"""
        
-    relevant = ccdf[[race+"_FEMALE" for race in my_races]].reset_index().set_index(["GEO", "YEAR"])
+    relevant = Geocdf[[race+"_FEMALE" for race in my_races]].reset_index().set_index(["GEO", "YEAR"])
     relevant_groups = relevant.groupby("AGEGRP")
     mygroup = lambda i: relevant_groups.get_group(i).drop("AGEGRP", axis=1)
     daughters, bottom, top = (mygroup(i) for i in (1,4,10))
