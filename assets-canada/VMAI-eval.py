@@ -1,8 +1,8 @@
 """
-@author: Miner
+@author: EAweblog
 
-Downloads Visible Minority and Aboriginal identity datasets for 2016 from statcan.gc.ca
-and computes CRR and ACE for 2016
+Downloads Visible Minority and Aboriginal identity datasets from statcan.gc.ca
+and computes CRR and ACE
 """
 
 import sys 
@@ -68,38 +68,42 @@ localname = lambda element: etree.QName(element).localname
 childrendict = lambda element: {localname(child):child for child in element}
 get_tags = lambda element,tag: (el for el in element if localname(el) == tag)
 
-def parse(zipfn, fn, parsefunction, **kwargs):
+def parsezip(zipfn, fn, parsefunction, **kwargs):
     with ZipFile(zipfn) as myzip:
         return parsefunction( myzip.open(fn), **kwargs )
 
-def parseStructure(file):
-    Codes = defaultdict(dict)
+def get_records_from_xml(file, record_name):
     for event, element in etree.iterparse(file):
-        if localname(element) != 'CodeList': continue
-        for Code in get_tags(element, 'Code'):
+        if localname(element) != record_name: continue
+        yield element
+        if element.getparent() is not None: element.getparent().clear()
+        # for reasons unbeknownst to me, sometimes the parent is None and
+        # sometimes the parent is not None!
+
+def parseStructure(file):
+    Codes = defaultdict(dict)    
+    for CodeList in get_records_from_xml(file, 'CodeList'):
+        for Code in get_tags(CodeList, 'Code'):
             desc = next(get_tags(Code, 'Description')).text
-            Codes[element.get('id')][Code.get('value')] = desc
-        element.clear()
+            Codes[CodeList.get('id')][Code.get('value')] = desc    
     return dict(Codes)
 
 @memoize
 def Codes(table):
-    return parse(f'{table}.ZIP', f'Structure_{table}.xml', parseStructure)
+    return parsezip(f'{table}.ZIP', f'Structure_{table}.xml', parseStructure)
 
 def parseGeneric(file, seriesfunction):
     columns = defaultdict(dict)
-    for event, element in etree.iterparse(file):
-        if localname(element) != 'Series': continue
-        for idx, col, val in seriesfunction(element):
-            columns[col][idx] = val        
-        element.clear()
+    for Series in get_records_from_xml(file, 'Series'):
+        for idx, col, val in seriesfunction(Series):
+            columns[col][idx] = val    
     df = pd.DataFrame.from_dict(columns)
     df.index.rename( ("GEO", "AGE", "SEX"), inplace=True )
     return df
 
 def parseSeries(age_to_USA_age, condition, relevant_key, # first line of params will be partial'd
-                series):
-    children = childrendict(series)
+                Series):
+    children = childrendict(Series)
     key = {child.get("concept").upper():child.get("value") for child in children["SeriesKey"]}
     obs = childrendict(children["Obs"])
     
@@ -127,7 +131,7 @@ def parseAItable(year):
         condition = lambda key: True
         relevant_key = "B01_ABORIG_IDENTITY"
     parseAISeries = partial(parseSeries, age_to_USA_age, condition, relevant_key)
-    aidf = parse(f'{AI}.ZIP', f'Generic_{AI}.xml', parseGeneric, seriesfunction=parseAISeries)
+    aidf = parsezip(f'{AI}.ZIP', f'Generic_{AI}.xml', parseGeneric, seriesfunction=parseAISeries)
     return aidf
 
 @clickwatch
@@ -149,7 +153,7 @@ def parseVMtable(year):
         condition = lambda key: True
         relevant_key = "DVISMIN"
     parseVMSeries = partial(parseSeries, age_to_USA_age, condition, relevant_key)
-    vmdf = parse(f'{VM}.ZIP', f'Generic_{VM}.xml', parseGeneric, seriesfunction=parseVMSeries)
+    vmdf = parsezip(f'{VM}.ZIP', f'Generic_{VM}.xml', parseGeneric, seriesfunction=parseVMSeries)
     return vmdf
 
 @clickwatch
