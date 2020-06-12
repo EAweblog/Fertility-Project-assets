@@ -3,6 +3,9 @@
 
 Downloads Visible Minority and Aboriginal identity datasets from statcan.gc.ca
 and computes CRR and ACE
+
+VM = visible minority
+AI = aboriginal identity
 """
 
 import sys 
@@ -17,9 +20,6 @@ from zipfile import ZipFile
 from lxml import etree
 from collections import defaultdict
 from functools import partial
-
-# VM = visible minority
-# AI = aboriginal identity
 
 VM_url = {2016: 'https://www12.statcan.gc.ca/census-recensement/2016/dp-pd/dt-td/OpenDataDownload.cfm?PID=112451',
           2011: 'https://www12.statcan.gc.ca/nhs-enm/2011/dp-pd/dt-td/OpenDataDownload.cfm?PID=105395',
@@ -222,7 +222,8 @@ def porcess_data():
     daughters, bottom, top = (mygroup(i) for i in (1,4,10))
     mothers = sum(mygroup(i) for i in range(5,10)) + (bottom+top)/2
     
-    crr = (daughters*6 / mothers).round(2).replace([-np.inf, np.nan, np.inf], 0).rename(columns=lambda x: x[0]+'_CRR')
+    crr = (daughters*6 / mothers).round(2).rename(columns=lambda x: x[0]+'_CRR')
+    crr = replace_inf(crr)
     ace = ((daughters-top)/5).round(0).astype(int).rename(columns=lambda x: x[0]+'_ACE')
     
     global alldata
