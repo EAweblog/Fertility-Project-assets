@@ -156,7 +156,7 @@ def add_myrace_columns():
         ph = his + '%s' + sex # placeholder
         Geocdf[ph%'TC'] = sum(Geocdf[ph%(crace+'C')] for crace in census_races)
         # (total in combination) = (sum of [(crace in combination) for crace in census_races])
-        Geocdf[ph%'addterm'] = (Geocdf[ph%'TOM'] / Geocdf[ph%'TC']).replace([-np.inf, np.nan, np.inf], 0)
+        Geocdf[ph%'addterm'] = replace_inf(Geocdf[ph%'TOM'] / Geocdf[ph%'TC'])
     
     for his, crace, sex in product(hispanic_status, census_races, sexes):
         ph = his + crace + '%s' + sex # placeholder
@@ -196,7 +196,8 @@ def porcess_data():
     daughters, bottom, top = (mygroup(i) for i in (1,4,10))
     mothers = sum(mygroup(i) for i in range(5,10)) + (bottom+top)/2
     
-    crr = (daughters*6 / mothers).round(2).replace([-np.inf, np.nan, np.inf], 0).rename(columns=lambda x: x[0]+'_CRR')
+    crr = (daughters*6 / mothers).round(2).rename(columns=lambda x: x[0]+'_CRR')
+    crr = replace_inf(crr)
     ace = ((daughters-top)/5).round(0).astype(int).rename(columns=lambda x: x[0]+'_ACE')
     
     global alldata
